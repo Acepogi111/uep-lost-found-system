@@ -88,7 +88,7 @@
 
     <script>
         let currentUser = null;
-        const API = 'http://localhost:8080/api';
+        const API = '/api';
 
         async function register() {
             const res = await fetch(API + '/auth/register', {
