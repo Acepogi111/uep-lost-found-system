@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>UEP Lost & Found</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { font-family: Arial; margin: 20px; background: #f5f5f5; }
+       .container { max-width: 1400px; margin: 0 auto; }
+       .card { background: white; padding: 20px; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        input, textarea, select, button { width: 100%; padding: 10px; margin: 5px 0; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        button { background: #007bff; color: white; border: none; cursor: pointer; font-weight: bold; }
+        button:hover { background: #0056b3; }
+       .btn-success { background: #28a745; }
+       .btn-danger { background: #dc3545; }
+       .btn-warning { background: #ffc107; color: black; }
+       .item { border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 4px; }
+       .item img { max-width: 200px; margin-top: 10px; }
+       .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        h2 { color: #333; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
+       .status { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
+       .lost { background: #ff4444; color: white; }
+       .found { background: #00C851; color: white; }
+       .claimed { background: #6c757d; color: white; }
+       .hidden { display: none; }
+       .claim-box { background: #fff3cd; padding: 10px; margin-top: 10px; border-left: 4px solid #ffc107; }
+       .admin-badge { background: #dc3545; color: white; padding: 2px 6px; border-radius: 3px; font-size: 11px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>UEP Lost & Found System</h1>
+
+        <div class="grid">
+            <div class="card">
+                <h2>Register</h2>
+                <input type="text" id="regName" placeholder="Full Name">
+                <input type="text" id="regUsername" placeholder="Username">
+                <input type="password" id="regPassword" placeholder="Password">
+                <button onclick="register()">Register</button>
+            </div>
+
+            <div class="card">
+                <h2>Login</h2>
+                <input type="text" id="logUsername" placeholder="Username">
+                <input type="password" id="logPassword" placeholder="Password">
+                <button onclick="login()">Login</button>
+                <button onclick="logout()" class="btn-danger hidden" id="logoutBtn">Logout</button>
+                <p id="loginStatus"></p>
+            </div>
+        </div>
+
+        <div class="card hidden" id="reportCard">
+            <h2>Report Item</h2>
+            <select id="itemType">
+                <option value="LOST">Lost Item</option>
+                <option value="FOUND">Found Item</option>
+            </select>
+            <input type="text" id="itemName" placeholder="Item Name">
+            <input type="text" id="itemCategory" placeholder="Category">
+            <input type="text" id="itemLocation" placeholder="Location">
+            <input type="date" id="itemDate">
+            <textarea id="itemDesc" placeholder="Description"></textarea>
+            <input type="file" id="itemImage" accept="image/*">
+            <button onclick="reportItem()">Submit Report</button>
+        </div>
+
+        <div class="card">
+            <h2>Search Items</h2>
+            <input type="text" id="searchQuery" placeholder="Search by name, category, location...">
+            <button onclick="searchItems()">Search</button>
+            <button onclick="loadAllItems()">Show All Items</button>
+            <button onclick="loadMyItems()" id="myItemsBtn" class="btn-warning hidden">My Reports</button>
+            <button onclick="loadMyClaims()" id="myClaimsBtn" class="btn-warning hidden">My Claims</button>
+        </div>
+
+        <div class="card hidden" id="adminPanel">
+            <h2>Admin Panel <span class="admin-badge">ADMIN</span></h2>
+            <button onclick="loadAllClaims()">View All Pending Claims</button>
+            <div id="adminClaimsList"></div>
+        </div>
+
+        <div class="card">
+            <h2>Items List</h2>
+            <div id="itemsList"></div>
+        </div>
+    </div>
+
+    <script>
+        let currentUser = null;
+        const API = 'http://localhost:8080/api';
+
+        async function register() {
+            const res = await fetch(API + '/auth/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    fullName: document.getElementById('regName').value,
+                    username: document.getElementById('regUsername').value,
+                    password: document.getElementById('regPassword').value
+                })
+            });
+            const data = await res.json();
+            alert(data.message);
+        }
+
+        async function login() {
+            const res = await fetch(API + '/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    username: document.getElementById('logUsername').value,
+                    password: document.getElementById('logPassword').value
+                })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                currentUser = data;
+                document.getElementById('loginStatus').innerHTML = 'Logged in as: ' + data.fullName;
+                document.getElementById('logoutBtn').classList.remove('hidden');
+                document.getElementById('reportCard').classList.remove('hidden');
+                document.getElementById('myItemsBtn').classList.remove('hidden');
+                document.getElementById('myClaimsBtn').classList.remove('hidden');
+                if (data.username === 'admin') {
+                    document.getElementById('adminPanel').classList.remove('hidden');
+                }
+                loadAllItems();
+            } else {
+                alert(data.message);
+            }
+        }
+
+        function logout() {
+            currentUser = null;
+            document.getElementById('loginStatus').innerHTML = '';
+            document.getElementById('logoutBtn').classList.add('hidden');
+            document.getElementById('reportCard').classList.add('hidden');
+            document.getElementById('adminPanel').classList.add('hidden');
+            document.getElementById('myItemsBtn').classList.add('hidden');
+            document.getElementById('myClaimsBtn').classList.add('hidden');
+            loadAllItems();
+        }
+
+        async function reportItem() {
+            if (!currentUser) return alert('Please login first');
+            const formData = new FormData();
+            formData.append('type', document.getElementById('itemType').value);
+            formData.append('name', document.getElementById('itemName').value);
+            formData.append('category', document.getElementById('itemCategory').value);
+            formData.append('location', document.getElementById('itemLocation').value);
+            formData.append('date', document.getElementById('itemDate').value);
+            formData.append('description', document.getElementById('itemDesc').value);
+            formData.append('userId', currentUser.id);
+            const file = document.getElementById('itemImage').files[0];
+            if (file) formData.append('image', file);
+
+            const res = await fetch(API + '/items/report', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await res.json();
+            alert(data.message);
+            loadAllItems();
+        }
+
+        async function loadAllItems() {
+            const res = await fetch(API + '/items/all');
+            const items = await res.json();
+            displayItems(items);
+        }
+
+        async function loadMyItems() {
+            const res = await fetch(API + '/items/user/' + currentUser.id);
+            const items = await res.json();
+            displayItems(items);
+        }
+
+        async function searchItems() {
+            const query = document.getElementById('searchQuery').value;
+            const res = await fetch(API + '/items/search?query=' + query);
+            const items = await res.json();
+            displayItems(items);
+        }
+
+        async function displayItems(items) {
+            const list = document.getElementById('itemsList');
+            list.innerHTML = '';
+            for (const item of items) {
+                let claimsHtml = '';
+                if (currentUser && item.user.id === currentUser.id) {
+                    const claimsRes = await fetch(API + '/claims/item/' + item.id);
+                    const claims = await claimsRes.json();
+                    if (claims.length > 0) {
+                        claimsHtml = '<div class="claim-box"><strong>Claim Requests:</strong><br>';
+                        claims.forEach(function(c) {
+                            claimsHtml += 'From: ' + c.user.fullName + ' - "' + c.message + '" - Status: ' + c.status + '<br>';
+                        });
+                        claimsHtml += '</div>';
+                    }
+                }
+
+                let buttonHtml = '';
+                if (currentUser && item.user.id!== currentUser.id && item.status!== 'CLAIMED') {
+                    buttonHtml = '<button onclick="claimItem(' + item.id + ')">Claim This Item</button>';
+                }
+
+                let imageHtml = '';
+                if (item.imageUrl) {
+                    imageHtml = '<img src="' + API + item.imageUrl + '" alt="' + item.name + '">';
+                }
+
+                list.innerHTML += '<div class="item">' +
+                    '<span class="status ' + (item.status === 'CLAIMED'? 'claimed' : item.type.toLowerCase()) + '">' + (item.status === 'CLAIMED'? 'CLAIMED' : item.type) + '</span>' +
+                    '<h3>' + item.name + '</h3>' +
+                    '<p><strong>Category:</strong> ' + item.category + '</p>' +
+                    '<p><strong>Location:</strong> ' + item.location + '</p>' +
+                    '<p><strong>Date:</strong> ' + item.date + '</p>' +
+                    '<p><strong>Description:</strong> ' + item.description + '</p>' +
+                    '<p><strong>Reported by:</strong> ' + item.user.fullName + '</p>' +
+                    imageHtml +
+                    buttonHtml +
+                    claimsHtml +
+                    '</div>';
+            }
+        }
+
+        async function claimItem(itemId) {
+            if (!currentUser) return alert('Please login first');
+            const message = prompt('Enter claim message with your contact details:');
+            if (!message) return;
+
+            const res = await fetch(API + '/claims/create', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    itemId: itemId,
+                    userId: currentUser.id,
+                    message: message
+                })
+            });
+            const data = await res.json();
+            alert(data.message);
+        }
+
+        async function loadMyClaims() {
+            const res = await fetch(API + '/claims/user/' + currentUser.id);
+            const claims = await res.json();
+            const list = document.getElementById('itemsList');
+            list.innerHTML = '<h3>My Claim Requests</h3>';
+            claims.forEach(function(c) {
+                list.innerHTML += '<div class="item">' +
+                    '<p><strong>Item:</strong> ' + c.item.name + '</p>' +
+                    '<p><strong>Your Message:</strong> ' + c.message + '</p>' +
+                    '<p><strong>Status:</strong> ' + c.status + '</p>' +
+                    '</div>';
+            });
+        }
+
+        async function loadAllClaims() {
+            const res = await fetch(API + '/claims/pending');
+            const claims = await res.json();
+            const list = document.getElementById('adminClaimsList');
+            list.innerHTML = '';
+            claims.forEach(function(c) {
+                list.innerHTML += '<div class="item">' +
+                    '<p><strong>Item:</strong> ' + c.item.name + ' (' + c.item.type + ')</p>' +
+                    '<p><strong>Reported by:</strong> ' + c.item.user.fullName + '</p>' +
+                    '<p><strong>Claimed by:</strong> ' + c.user.fullName + '</p>' +
+                    '<p><strong>Message:</strong> ' + c.message + '</p>' +
+                    '<button class="btn-success" onclick="approveClaim(' + c.id + ')">Approve & Mark as Claimed</button>' +
+                    '<button class="btn-danger" onclick="rejectClaim(' + c.id + ')">Reject</button>' +
+                    '</div>';
+            });
+        }
+
+        async function approveClaim(claimId) {
+            const res = await fetch(API + '/claims/approve/' + claimId, { method: 'PUT' });
+            const data = await res.json();
+            alert(data.message);
+            loadAllClaims();
+            loadAllItems();
+        }
+
+        async function rejectClaim(claimId) {
+            const res = await fetch(API + '/claims/reject/' + claimId, { method: 'PUT' });
+            const data = await res.json();
+            alert(data.message);
+            loadAllClaims();
+        }
+
+        window.onload = loadAllItems;
+    </script>
+</body>
+</html>
